@@ -1,25 +1,139 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+output: html_document
+keep_md: true
 ---
 
-
 ## Loading and preprocessing the data
-
-
+One time unzipping of the data
+```{r activitydata}
+setwd("C:/apk/Education/Coursera/Rwork/RepData_PeerAssessment1")
+if (!file.exists("data")) {
+  dir.create("data")
+}
+if (!file.exists("./data/activity.csv")) {
+    unzip("activity.zip", exdir = "./data")
+}
+actdat <- read.csv("./data/activity.csv")
+```
 
 ## What is mean total number of steps taken per day?
+As instructed, I ingnored the missing vlaues for this part of the assignment.
+- Make a histogram of the total number of steps taken each day
+```{r}
+library(dplyr)
+by_day <- group_by(actdat, date)
+dat4plot <- summarise(by_day, dailysteps = sum(steps))
+hist(dat4plot$dailysteps, main="Histogram of total number of steps taken each day")
+#barplot(dat4plot$dailysteps, names.arg = dat4plot$date, ylab="Total Steps", xlab="Date" )  
+```
 
+- Calculate and report the mean and median total number of steps taken per day
+
+```{r means}
+meanofdailytotals <- as.integer(round(mean(dat4plot$dailysteps, na.rm=TRUE)))
+medianofdailytotals <- median(dat4plot$dailysteps, na.rm=TRUE)
+
+```
+
+The Mean of total number of steps taken daily is `r meanofdailytotals` 
+and the Median of total number of steps taken daily is `r medianofdailytotals` 
 
 
 ## What is the average daily activity pattern?
 
 
+- Make a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+```{r avgactivity}
+#by_interval <- group_by(actdat, interval)
+#dat4plot <- summarise(by_interval, avgsteps=mean(steps))
+#plot(dat4plot$interval, dat4plot$avgsteps, type="l")
+AvgStepsPerInterval <- aggregate(steps ~ interval, data=actdat, FUN=mean)
+plot(AvgStepsPerInterval, type="l", main="Average number of steps taken in each 5 min interval", ylab="Number of steps(Average)")
+
+```
+
+- Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r findmax, echo=FALSE}
+MaxAvgSteps <- max(AvgStepsPerInterval$steps)
+IntervalMaxAvg <- AvgStepsPerInterval$interval[which.max(AvgStepsPerInterval$steps)]
+```
+
+`r IntervalMaxAvg`th interval contains the maximum ie `r round(MaxAvgSteps)` average number of steps. 
+
+
 
 ## Imputing missing values
 
+- Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
 
+``` {r , echo=FALSE}
+#count(actdat[is.na(actdat$steps),])
+
+#NA could appear in any column in the rows and not just steps column
+TotalRowsWithNA <- nrow(actdat) - nrow(na.omit(actdat))
+```
+
+Total number of rows with missing values is `r TotalRowsWithNA`
+
+- Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+Strategy will be to replace NAs with the mean for that 5-minute interval. Let us first create a column that will have 5-min interval averages in the rows for respective intervals
+
+```{r}
+names(AvgStepsPerInterval)[2] <- c("avgintervalsteps")
+actmerged <- merge(actdat,AvgStepsPerInterval,by="interval")
+
+```
+
+- Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r}
+actimputed <- actmerged
+#make a new column with values copied from steps column 
+actimputed$stepswithimputedvalues <- actimputed$steps  
+#In this new column, replace the NAs with the corresponding average value
+actimputed$stepswithimputedvalues[is.na(actimputed$stepswithimputedvalues)] <- actimputed$avgintervalsteps[is.na(actimputed$stepswithimputedvalues)]
+
+```
+
+- Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+```{r}
+library(dplyr)
+by_day <- group_by(actimputed, date)
+dat4plot <- summarise(by_day, dailystepswithimputedvalues = sum(stepswithimputedvalues))
+hist(dat4plot$dailystepswithimputedvalues, main="Histogram of total number of steps taken each day with means imputed for NAs")
+#barplot(dat4plot$dailysteps, names.arg = dat4plot$date, ylab="Total Steps", xlab="Date" ) 
+meanofdailytotals <- as.integer(round(mean(dat4plot$dailystepswithimputedvalues, na.rm=TRUE)))
+medianofdailytotals <- median(dat4plot$dailystepswithimputedvalues, na.rm=TRUE)
+
+```
+
+The Mean of total number of steps taken daily is `r meanofdailytotals` 
+and the Median of total number of steps taken daily is `r medianofdailytotals` 
+
+Mean remains the same but median has changed because of imputing. Also, although the pattern remains roughly similar but the sum of daily steps have increased because of imputed values. we should be careful making any inferences from such data. 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+- Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+```{r}
+actimputed$wkday <- as.factor(ifelse(weekdays(as.Date(actimputed$date)) %in% c("Saturday","Sunday"), "Weekend", "Weekday"))
+```
+
+- Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
+
+```{r , fig.height=10}
+datweek <- actimputed[actimputed$wkday=='Weekday',]
+datweekend <- actimputed[actimputed$wkday=='Weekend',]
+
+weekday_means <- aggregate(datweek$stepswithimputedvalues~datweek$interval, data=datweek, FUN=mean)
+weekend_means <- aggregate(datweekend$stepswithimputedvalues~datweekend$interval, data=datweekend, FUN=mean)
+
+par(mfrow=c(2,1))
+plot(weekday_means, type="l", main="Weekday", xlab="Interval", ylab="No of Steps")
+plot(weekend_means, type="l", main="Weekend", xlab="Interval", ylab="No of Steps")
+```
